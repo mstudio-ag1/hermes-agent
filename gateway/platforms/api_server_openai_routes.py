@@ -228,6 +228,9 @@ class _ResponsesStream:
         # Resolved in the request's profile scope: a snapshot written after it (disconnect) must not follow another.
         self.response_store = adapter._current_response_store()
         self.final_text_parts: list[str] = []
+        # LOCAL PATCH (woven commentary): interim text finalized to its own message item, so
+        # stream-dedup checks must not mistake it for the final answer's streamed text.
+        self._interim_streamed_parts: list[str] = []
         self.pending_tool_calls: list[dict[str, Any]] = []  # open function_call items, in order
         self.emitted_items: list[dict[str, Any]] = []  # output items so far (terminal payload)
         self.output_index = 0
@@ -357,6 +360,36 @@ class _ResponsesStream:
         await self.write_event("response.output_item.done", {
             "type": "response.output_item.done", "output_index": rs["output_index"], "item": item})
 
+    async def close_open_message_as_commentary(self) -> None:
+        """LOCAL PATCH (woven commentary): when a tool (or new reasoning burst) interrupts an
+        already-streamed message item, finalize the streamed text so far as a completed
+        ``message`` item with ``"phase": "commentary"`` at its original output_index, then reset
+        the message slot so the next prose delta opens a fresh item. The final answer still
+        closes through close_message_item(). Mirrors emit_commentary's contract: never touches
+        final_text_parts; records the item in emitted_items so terminal snapshots and history
+        carry it."""
+        await self.close_reasoning_item()
+        if not self.message_opened:
+            return
+        text = "".join(self.final_text_parts)
+        if not text.strip():
+            return
+        parts = self.final_text_parts
+        self.final_text_parts = []
+        self.message_opened = False
+        item_id = self.message_item_id  # keep the id announced by the original output_item.added
+        self.message_item_id = f"msg_{uuid.uuid4().hex[:24]}"  # fresh id for the next open item
+        self._interim_streamed_parts.extend(parts)
+        item = {"id": item_id, "status": "completed", "phase": "commentary",
+                **_message_item(text)}
+        # NOTE: the item already had output_item.added emitted with in_progress status; re-add
+        # then done at the SAME output_index keeps clients that ignore deltas in sync (OWUI's
+        # handler replaces the item at output_index on .done).
+        self.emitted_items.append({"phase": "commentary", **_message_item(text)})
+        for event in ("response.output_item.added", "response.output_item.done"):
+            await self.write_event(event, {"type": event,
+                                           "output_index": self.message_output_index, "item": item})
+
     async def emit_commentary(self, text: str) -> None:
         """Mid-turn assistant commentary as its own completed ``message`` item carrying
         ``"phase": "commentary"`` — never appended to ``final_text_parts``, so the final answer
@@ -374,6 +407,7 @@ class _ResponsesStream:
     async def emit_tool_started(self, payload: dict[str, Any]) -> None:
         """function_call ``output_item.added``; the agent's tool_call_id beats a generated call id."""
         await self.close_reasoning_item()
+        await self.close_open_message_as_commentary()  # LOCAL PATCH (woven commentary)
         self.call_counter += 1
         call_id = payload.get("tool_call_id") or f"call_{self.response_id[5:]}_{self.call_counter}"
         args = payload.get("arguments", {})
