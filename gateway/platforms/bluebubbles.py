@@ -251,12 +251,14 @@ class BlueBubblesAdapter(BasePlatformAdapter):
 
     @property
     def _webhook_url(self) -> str:
-        """External webhook URL for BlueBubbles registration (local binds → localhost). In
-        shared-listener mode it is the default listener's ``/p/<profile>/`` URL."""
+        """External webhook URL for BlueBubbles registration (local binds → 127.0.0.1). In
+        shared-listener mode it is the default listener's ``/p/<profile>/`` URL.
+        NOTE: must be a literal IPv4 loopback — the adapter binds IPv4-only, and Node resolves
+        "localhost" to ::1 first (ECONNREFUSED on macOS), so BlueBubbles' webhook dispatch fails."""
         shared = getattr(self, "_shared_ingress_url", None)
         if shared:
             return shared
-        host = "localhost" if self.webhook_host in _LOCAL_HOSTS else self.webhook_host
+        host = "127.0.0.1" if self.webhook_host in _LOCAL_HOSTS else self.webhook_host
         return f"http://{host}:{self.webhook_port}{self.webhook_path}"
 
     def _webhook_register_url_with(self, password_param: str) -> str:
