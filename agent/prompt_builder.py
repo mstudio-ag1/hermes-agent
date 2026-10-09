@@ -834,9 +834,11 @@ PLATFORM_HINTS = {
         "formatting (no asterisks, bullets, headers, code fences). Treat this like a conversation, not a document. "
         "Keep responses brief and natural. File/media delivery: images referenced as MEDIA:/absolute/path tags "
         "(.png/.jpg/.jpeg/.gif/.webp/.bmp, up to 5MB) are inlined as base64 data URLs in responses on the chat, "
-        "completions, and responses endpoints. Non-image files are NOT intercepted anywhere, and the runs endpoint "
-        "intercepts nothing — a MEDIA: tag there renders as literal text exposing a raw host filesystem path. For "
-        "those cases, state the plain file path in your response text instead of a MEDIA: tag."
+        "completions, and responses endpoints. Non-image files (PDF, DOCX, archives...) also use MEDIA:/absolute/path "
+        "tags: the server rewrites them into download-card markers for capable frontends when a file mirror is "
+        "configured, or leaves them literal otherwise. NEVER write raw filesystem paths in your response text and "
+        "NEVER substitute rasterized page-images of a document for delivering the document file itself — deliver "
+        "the file with the MEDIA: tag and let the server decide how it renders."
     ),
     # No "webui" hint on purpose: nothing constructs platform="webui" (the dashboard chat resolves to
     # 'desktop' or 'tui'). If a real WebUI chat surface ships, write a hint from its actual renderer.
