@@ -897,6 +897,53 @@ def _resolve_media_to_data_urls(text: str) -> str:
         return text
 
 
+def _rewrite_file_media_to_markers(text: str) -> str:
+    """Non-image ``MEDIA:`` tags cannot be inlined and reach remote frontends as literal
+    text that leaks host filesystem paths. When the operator configures a public file
+    mirror (``HERMES_FILE_MARKER_URL`` + ``HERMES_FILE_MARKER_DIR``), copy each non-image
+    MEDIA target into the mirror and rewrite the tag to a ``[[file:URL|Name]]`` marker,
+    which capable frontends (Open WebUI pipe v5.9+) present as a native download card.
+    Image tags are left untouched for :func:`_resolve_media_to_data_urls`. Unset env =
+    exact previous behavior (no-op). Paths go through the same delivery validation as
+    native media, so injected secrets never get copied into a public mirror."""
+    base = (os.environ.get("HERMES_FILE_MARKER_URL") or "").rstrip("/")
+    root = os.environ.get("HERMES_FILE_MARKER_DIR") or ""
+    if not text or "MEDIA:" not in text or not base or not root:
+        return text
+    import shutil
+    from urllib.parse import quote
+    from gateway.platforms.base import MEDIA_TAG_CLEANUP_RE, validate_media_delivery_path
+
+    def _to_marker(path_str: str) -> Optional[str]:
+        safe = validate_media_delivery_path(path_str)
+        if not safe:
+            return None
+        p = Path(safe)
+        if p.suffix.lower() in _MEDIA_IMG_EXT:
+            return None
+        try:
+            size = p.stat().st_size
+            if size == 0 or size > 25 * 1024 * 1024:
+                return None
+            mirror = Path(os.path.expanduser(root))
+            mirror.mkdir(parents=True, exist_ok=True)
+            name = os.path.basename(safe)
+            dest = mirror / f"{uuid.uuid4().hex[:8]}_{name}"
+            shutil.copyfile(p, dest)
+            os.chmod(dest, 0o644)
+        except OSError:
+            return None
+        return f"[[file:{base}/{quote(dest.name)}|{name}]]"
+
+    def _repl(m: "re.Match[str]") -> str:
+        return _to_marker(m.group("path")) or m.group(0)
+
+    try:
+        return MEDIA_TAG_CLEANUP_RE.sub(_repl, text)
+    except Exception:
+        return text
+
+
 def _redact_api_error_text(value: Any, *, limit: int | None = None) -> str:
     """Redact API-bound error text before it crosses the HTTP boundary."""
     redacted = redact_sensitive_text(str(value), force=True)
