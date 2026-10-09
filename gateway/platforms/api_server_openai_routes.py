@@ -530,6 +530,13 @@ class _ResponsesStream:
         await self.close_reasoning_item()
         self.final_response_text = (
             self.transformed_final or "".join(self.final_text_parts) or self.final_response_text)
+        # MEDIA: tags were only resolved on non-streaming paths (parity gap): streamed
+        # deltas carried raw tags for clients that rebuilt content from the item.done
+        # envelope (OWUI pipe). The non-streaming endpoint already resolves via
+        # _resolve_media_to_data_urls; do the same here so both shapes match.
+        if self.final_response_text and "MEDIA:" in self.final_response_text:
+            from gateway.platforms.api_server import _resolve_media_to_data_urls
+            self.final_response_text = _resolve_media_to_data_urls(self.final_response_text)
         if not self.message_opened:
             return
         await self.write_event("response.output_text.done", {
