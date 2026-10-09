@@ -664,7 +664,9 @@ class _ResponsesStream:
         # envelope (OWUI pipe). The non-streaming endpoint already resolves via
         # _resolve_media_to_data_urls; do the same here so both shapes match.
         if self.final_response_text and "MEDIA:" in self.final_response_text:
-            from gateway.platforms.api_server import _resolve_media_to_data_urls
+            from gateway.platforms.api_server import (
+                _resolve_media_to_data_urls, _rewrite_file_media_to_markers)
+            self.final_response_text = _rewrite_file_media_to_markers(self.final_response_text)
             self.final_response_text = _resolve_media_to_data_urls(self.final_response_text)
         if not self.message_opened:
             return
@@ -1503,7 +1505,11 @@ class OpenAICompatRoutesMixin:
             if _settled(replay):
                 return web.json_response(replay['response'], headers=replay.get('headers') or {})
         result, usage = outcome
-        final_response = _resolve_media_to_data_urls(result.get("final_response", ""))
+        final_response = result.get("final_response", "")
+        if "MEDIA:" in final_response:
+            from gateway.platforms.api_server import _rewrite_file_media_to_markers
+            final_response = _rewrite_file_media_to_markers(final_response)
+        final_response = _resolve_media_to_data_urls(final_response)
         if not final_response:
             final_response = _redact_api_error_text(result.get("error", "(No response generated)"))
         full_history = self._build_response_conversation_history(
