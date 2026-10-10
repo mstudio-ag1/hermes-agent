@@ -773,7 +773,26 @@ def _rewrite_file_media_to_markers(text: str) -> str:
         return _to_marker(m.group("path")) or m.group(0)
 
     try:
-        return MEDIA_TAG_CLEANUP_RE.sub(_repl, text)
+        out = MEDIA_TAG_CLEANUP_RE.sub(_repl, text)
+        # MEDIA_TAG_CLEANUP_RE's extension alternation only covers KNOWN deliverable
+        # extensions (.pdf, .png, ...). Unknown-ext tags (.py, .sh, ...) never match it,
+        # so they leaked as raw MEDIA: text here even though the base adapter delivers
+        # them (via MEDIA_EXTENSIONLESS_TAG_RE + validate_media_delivery_path). Rescue
+        # those on the same code path: _extensionless_media_matches already applies the
+        # on-disk validation AND the delivery mask (code fences stay non-deliverable).
+        if "MEDIA:" in out:
+            from gateway.platforms.base import (
+                _extensionless_media_matches, _mask_media_scan_text)
+            masked = _mask_media_scan_text(out)
+            spans = [(m.start(), end, safe)
+                     for m, safe, end in _extensionless_media_matches(masked)]
+            rebuilt = out
+            for start, end, safe in reversed(spans):
+                marker = _to_marker(safe)
+                if marker:
+                    rebuilt = rebuilt[:start] + marker + rebuilt[end:]
+            out = rebuilt
+        return out
     except Exception:
         return text
 
