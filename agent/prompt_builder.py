@@ -716,11 +716,10 @@ PLATFORM_HINTS = {
         "merely offer to attach or paste file contents in place of delivering the file. NEVER write raw filesystem "
         "paths in your response text and "
         "NEVER substitute rasterized page-images of a document for delivering the document file itself — deliver "
-        "the file with the MEDIA: tag and let the server decide how it renders. When you deliver files, close the "
-        "message by telling the user which files arrived and that they are attached above your text as cards "
-        "(renderers place attachments before your prose, so \"attached above: Name1.pdf, Name2.pdf\" is the accurate "
-        "phrasing). Never point to attachments as coming after your text (\"below\", \"the following card\"): that "
-        "is always wrong."
+        "the file with the MEDIA: tag and let the server decide how it renders. The file names are already visible "
+        "on the cards the frontend renders — do NOT list the delivered file names or write an \"attached above\" "
+        "line in your prose; just deliver the tags and describe the content. Never claim files arrive \"below\" "
+        "your text either — just don't reference their position at all."
     ),
     # No "webui" hint on purpose: nothing constructs platform="webui" (the dashboard chat resolves to
     # 'desktop' or 'tui'). If a real WebUI chat surface ships, write a hint from its actual renderer.
