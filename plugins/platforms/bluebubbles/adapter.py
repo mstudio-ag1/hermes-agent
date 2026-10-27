@@ -132,6 +132,7 @@ class BlueBubblesAdapter(BasePlatformAdapter):
         self._private_api_enabled: Optional[bool] = None
         self._helper_connected: bool = False
         self._guid_cache: OrderedDict[str, str] = OrderedDict()
+        self._seen_guids: OrderedDict[str, None] = OrderedDict()  # webhook dedupe (LRU)
 
     # --- API helpers ---
 
@@ -580,6 +581,21 @@ class BlueBubblesAdapter(BasePlatformAdapter):
         record = self._extract_payload_record(payload) or {}
         if record.get("isFromMe") or record.get("fromMe") or record.get("is_from_me"):
             return _ok()
+        # Read-receipt echo: opening Messages.app marks chats read, which BlueBubbles
+        # re-dispatches as an updated-message webhook carrying the ORIGINAL inbound text.
+        # Without this gate the same user message is processed a second time, under a
+        # sender-only chat id -> phantom duplicate session + duplicate agent reply.
+        if event_type == "updated-message" and (record.get("is_read") or record.get("isRead")
+                                                or record.get("read") or record.get("readDate")):
+            return _ok()
+        msg_guid = self._value(record.get("guid"), record.get("messageGuid"), record.get("id"))
+        if msg_guid:  # LRU dedupe across chat ids (same guid = same message)
+            if msg_guid in self._seen_guids:
+                self._seen_guids.move_to_end(msg_guid)
+                return _ok()
+            self._seen_guids[msg_guid] = None
+            while len(self._seen_guids) > 512:
+                self._seen_guids.popitem(last=False)
         assoc_type = record.get("associatedMessageType")
         if isinstance(assoc_type, int) and assoc_type in _TAPBACK_CODES:  # tapback reactions delivered as messages
             return _ok()

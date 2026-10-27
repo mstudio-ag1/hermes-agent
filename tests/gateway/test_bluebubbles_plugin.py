@@ -318,12 +318,14 @@ class TestBlueBubblesAttachmentSend:
 
 
 class TestBlueBubblesWebhookUrl:
-    """_webhook_url property normalises local hosts to 'localhost'."""
+    """_webhook_url property normalises local hosts to '127.0.0.1' (fork patch:
+    literal IPv4 — Node's DNS resolver sends 'localhost' to ::1, which the
+    IPv4-bound webhook listener refuses)."""
 
     def test_default_host(self, monkeypatch):
         adapter = _make_adapter(monkeypatch)
-        # Default webhook_host is 0.0.0.0 → normalized to localhost
-        assert "localhost" in adapter._webhook_url
+        # Default webhook_host is 0.0.0.0 → normalized to literal IPv4 loopback
+        assert "127.0.0.1" in adapter._webhook_url
         assert str(adapter.webhook_port) in adapter._webhook_url
         assert adapter.webhook_path in adapter._webhook_url
 
@@ -625,3 +627,88 @@ class TestBlueBubblesPluginRegistration:
         assert policy is None or not policy.text_direct
         assert not hasattr(senders, "_send_bluebubbles")
         assert all(p["key"] != "bluebubbles" for p in wiz._PLATFORMS)
+
+
+class TestBlueBubblesReadReceiptDedupe:
+    """Opening Messages.app marks chats read; BlueBubbles re-dispatches the
+    original inbound message as an updated-message (read) event. That echo must
+    not start a second session under the sender-only chat id."""
+
+    @pytest.mark.asyncio
+    async def test_updated_read_event_is_acknowledged_and_skipped(self, monkeypatch):
+        adapter = _make_adapter(monkeypatch, send_read_receipts=False)
+        handled = []
+
+        async def fake_handle_message(event):
+            handled.append(event)
+
+        monkeypatch.setattr(adapter, "handle_message", fake_handle_message)
+        response = await adapter._handle_webhook(_FakeBlueBubblesRequest({
+            "type": "updated-message",
+            "data": {
+                "guid": "msg-read-1",
+                "text": "Anything new?",
+                "handle": {"address": "+155****0100"},
+                "isFromMe": False,
+                "is_read": True,
+                "chats": [{"guid": "iMessage;-;+155****0100"}],
+            },
+        }))
+        await asyncio.sleep(0)
+
+        assert response.status == 200
+        assert handled == []
+
+    @pytest.mark.asyncio
+    async def test_same_guid_delivered_twice_is_processed_once(self, monkeypatch):
+        adapter = _make_adapter(monkeypatch, send_read_receipts=False)
+        handled = []
+
+        async def fake_handle_message(event):
+            handled.append(event)
+
+        monkeypatch.setattr(adapter, "handle_message", fake_handle_message)
+        payload = {
+            "type": "new-message",
+            "data": {
+                "guid": "msg-dup-1",
+                "text": "hello",
+                "handle": {"address": "+155****0100"},
+                "isFromMe": False,
+                "chats": [{"guid": "iMessage;-;+155****0100"}],
+            },
+        }
+        first = await adapter._handle_webhook(_FakeBlueBubblesRequest(payload))
+        await asyncio.sleep(0)
+        # same guid, different chat id spelling (any;-; vs bare sender) — still a dup
+        payload["data"]["chats"] = [{"guid": "any;-;+155****0100"}]
+        second = await adapter._handle_webhook(_FakeBlueBubblesRequest(payload))
+        await asyncio.sleep(0)
+
+        assert first.status == 200
+        assert second.status == 200
+        assert len(handled) == 1
+
+    @pytest.mark.asyncio
+    async def test_distinct_guids_both_processed(self, monkeypatch):
+        adapter = _make_adapter(monkeypatch, send_read_receipts=False)
+        handled = []
+
+        async def fake_handle_message(event):
+            handled.append(event)
+
+        monkeypatch.setattr(adapter, "handle_message", fake_handle_message)
+        for i in range(2):
+            await adapter._handle_webhook(_FakeBlueBubblesRequest({
+                "type": "new-message",
+                "data": {
+                    "guid": f"msg-uniq-{i}",
+                    "text": f"hello {i}",
+                    "handle": {"address": "+155****0100"},
+                    "isFromMe": False,
+                    "chats": [{"guid": "iMessage;-;+155****0100"}],
+                },
+            }))
+            await asyncio.sleep(0)
+
+        assert len(handled) == 2
