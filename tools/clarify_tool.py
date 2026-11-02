@@ -174,7 +174,7 @@ CLARIFY_SCHEMA = {
         "can't click). Result: {responses: [...], outcome} in question order. "
         "Each response has status answered, skipped or unanswered "
         "(user_response is null unless answered); outcome is submitted, "
-        "cancelled, timed_out or undelivered, with a notice saying why "
+        "cancelled, timed_out, deferred or undelivered, with a notice saying why "
         "when the wait ended without a submit. Prefer deciding "
         "low-stakes questions yourself; don't use this for dangerous-command "
         "confirmation (the terminal tool handles that)."

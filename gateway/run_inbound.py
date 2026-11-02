@@ -1289,6 +1289,10 @@ class GatewayInboundMixin(GatewayInboundHooksMixin, GatewayInboundTranscriptionM
         _reply = None if is_internal else await self._hm_pending_reply_intercepts(event, source, _quick_key)
         if _reply is not None:
             return _reply
+        if is_internal:
+            # Fork patch #14: coerce a deferred clarify answer (gateway/api_clarify_deferred.py)
+            from gateway.api_clarify_deferred import maybe_rewrite_api_answer
+            maybe_rewrite_api_answer(event, source, _quick_key)
 
         _owned, _authority_reply = await self._hm_authority_admission(event, source, _quick_key, is_internal)
         if _owned:
