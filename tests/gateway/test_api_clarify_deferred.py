@@ -63,8 +63,10 @@ def test_defer_returns_outcome_and_rendered_block():
 
 
 def test_numeric_answer_is_coerced_fifo():
-    _defer([{"qid": "q0", "question": "Which env?", "choices": ["staging (Recommended)", "prod"]},
-            {"qid": "q1", "question": "Which svc?", "choices": ["api", "cron"], "multi_select": True}])
+    # The single-question pin (patch #15 era) bounces batched calls, so FIFO depth
+    # is only ever built by CHAINED single-question calls — arm it that way.
+    _defer([{"qid": "q0", "question": "Which env?", "choices": ["staging (Recommended)", "prod"]}])
+    _defer([{"qid": "q1", "question": "Which svc?", "choices": ["api", "cron"], "multi_select": True}])
     ev = _Event("1")
     assert acd.maybe_rewrite_api_answer(ev, _Source("api_server"), SK)
     assert ev.text.startswith('[clarify answered] Q: "Which env?" -> A: staging.')
@@ -126,6 +128,25 @@ def test_other_platform_answers_never_rewritten():
     ev = _Event("1")
     assert not acd.maybe_rewrite_api_answer(ev, _Source("bluebubbles"), SK)
     assert ev.text == "1"
+
+
+def test_multi_question_call_is_bounced_with_no_entry_armed():
+    reply = _defer([{"qid": "q0", "question": "Which env?", "choices": ["staging", "prod"]},
+                    {"qid": "q1", "question": "Which svc?", "choices": ["api", "cron"]}])
+    assert reply is not None and reply["outcome"] == "undelivered"
+    assert "EXACTLY ONE question" in reply["notice"]
+    assert not acd._pending and not acd._index
+    ev = _Event("1")  # nothing armed: no coercion may fire off a bounced call
+    assert not acd.maybe_rewrite_api_answer(ev, _Source("api_server"), SK)
+
+
+def test_answer_tail_routes_the_next_question_through_the_tool():
+    # Observed live: a bare "do not re-ask" tail made the model hand-write the NEXT
+    # numbered block as prose — no tool call, no deferred entry, no card for a pipe.
+    _defer([{"qid": "q0", "question": "Pick?", "choices": ["x (Recommended)", "y"]}])
+    ev = _Event("x")
+    assert acd.maybe_rewrite_api_answer(ev, _Source("api_server"), SK)
+    assert "call clarify_one again" in ev.text
 
 
 def test_tool_contract_carries_deferred_outcome_and_notice():

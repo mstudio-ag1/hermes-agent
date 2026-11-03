@@ -134,6 +134,21 @@ def try_defer(ctx: Any, questions: list[dict]) -> Optional[dict]:
     session_key = getattr(ctx, "session_key", None) or ""
     if not session_key or not questions:
         return None
+    if len(questions) > 1:
+        # Tee (2026-11-03, UNCOMMITTED): pin ONE question per call on HTTP surfaces.
+        # The deferred lane answers exactly one entry per inbound message (FIFO), so a
+        # batched call strands N-1 armed entries as a text interview. Bounce the call
+        # (the schema's batch guidance is global; only this lane is single-answer), and
+        # the model re-issues with its single most important question.
+        logger.info("Bounced multi-question clarify on HTTP surface (session=%s, n=%d)",
+                    session_key, len(questions))
+        return {"answers": {}, "outcome": "undelivered", "notice": (
+            "This HTTP surface asks and answers EXACTLY ONE question per clarify call "
+            f"(this call carried {len(questions)}), and this call was NOT delivered. "
+            "Re-issue clarify now with a questions array of length 1 containing the single "
+            "most important question; chain the follow-ups as new calls after each answer. "
+            "In your reply, present ONLY the one question you re-issue \u2014 never "
+            "enumerate the others or their options in prose.")}
     entries: list[_DeferredEntry] = []
     with _lock:
         _purge_expired_locked(session_key)
@@ -155,11 +170,14 @@ def try_defer(ctx: Any, questions: list[dict]) -> Optional[dict]:
                 "as the turn's final reply, answer coerced from the next message",
                 session_key, [e.clarify_id for e in entries])
     notice = (
-        "The clarify UI is unavailable on this HTTP surface, so the user has NOT seen these "
-        "questions yet. Reply to the user with the questions below reproduced VERBATIM "
-        "(keep the numbering and labels; you may add one lead-in sentence), then END your "
-        "turn: no further tool calls, do not answer the questions yourself. The user's next "
-        "message arrives already coerced to their choice(s), as a [clarify answered] line.\n\n"
+        "The clarify UI is unavailable on this HTTP surface, so the user has NOT seen this "
+        "question yet. Reply to the user with the question below reproduced VERBATIM (keep "
+        "the numbering and labels; you may add ONE lead-in sentence), then END your turn: "
+        "no further tool calls, do not answer the question yourself. Present ONLY this "
+        "question: if the user asked for several decisions at once, use the lead-in to say "
+        "you will take them one at a time \u2014 never enumerate, preview, or hint at the "
+        "other questions or their options in this reply. The user's next message arrives "
+        "already coerced to their choice, as a [clarify answered] line.\n\n"
         + _render_block(entries)
     )
     return {"answers": {}, "outcome": _DEFERRED_OUTCOME, "notice": notice}
@@ -209,7 +227,10 @@ def _rewrite(entry: _DeferredEntry, text: str) -> Optional[str]:
             answered = ", ".join(str(strip_recommended(v)) for v in value)
         else:
             answered = str(strip_recommended(value))
-    tail = " Continue the work using this answer; do not re-ask."
+    tail = (" Continue the work using this answer; do not re-ask this question. If another "
+            "decision is needed next, call clarify_one again with that single question and "
+            "present its numbered block in your reply \u2014 never hand-write a numbered "
+            "question block that did not come from a clarify_one call this turn.")
     remaining = len(_index.get(entry.session_key) or [])
     if remaining:
         tail += (f" {remaining} clarify question(s) are still pending — present the next one "

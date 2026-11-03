@@ -719,7 +719,7 @@ PLATFORM_HINTS = {
         "the file with the MEDIA: tag and let the server decide how it renders. The file names are already visible "
         "on the cards the frontend renders — do NOT list the delivered file names or write an \"attached above\" "
         "line in your prose; just deliver the tags and describe the content. Never claim files arrive \"below\" "
-        "your text either — just don't reference their position at all."
+        "your text either — just don't reference their position at all. Questions: use the clarify_one tool — exactly one question per call. Every numbered question block you present must come from this turn's clarify_one call; chain follow-ups as new calls after each answer."
     ),
     # No "webui" hint on purpose: nothing constructs platform="webui" (the dashboard chat resolves to
     # 'desktop' or 'tui'). If a real WebUI chat surface ships, write a hint from its actual renderer.
