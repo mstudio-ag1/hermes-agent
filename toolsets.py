@@ -149,6 +149,8 @@ TOOLSETS = {
         platforms=frozenset({"desktop"}),
     ),
     "clarify": _ts("Ask the user clarifying questions (multiple-choice or open-ended)", ["clarify"]),
+    # Fork patch #15: single-question clarify for the HTTP lane (tools/clarify_one_tool.py).
+    "clarify_one": _ts("Ask the user exactly one question (HTTP/API lane)", ["clarify_one"]),
     "code_execution": _ts("Run Python scripts that call tools programmatically (reduces LLM round trips)", ["execute_code"]),
     "delegation": _ts("Spawn subagents with isolated context for complex subtasks", ["delegate_task"]),
     "kanban": _ts(

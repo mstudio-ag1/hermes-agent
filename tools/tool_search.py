@@ -138,6 +138,11 @@ def _core_tool_names() -> frozenset[str]:
 # Session-gated GUI toolsets: off ``_HERMES_CORE_TOOLS`` so non-GUI clients never pay
 # their schema; once enabled they stay direct unless the deferral list names them.
 _DIRECT_SURFACE_TOOLSETS = CLIENT_SURFACE_TOOLSETS | TOOLSET_SESSION_PLATFORMS.keys()
+# Fork patch #15: clarify_one (tools/clarify_one_tool.py) rides the direct surface on
+# the lanes that grant it. The deferral rule would bridge-hide every non-core registry
+# toolset, and the A/B note below proves why the ask-the-user affordance must stay
+# ambient, not a stub: deferring clarify collapsed structured-clarify usage 18/18 -> 7/18.
+_DIRECT_SURFACE_TOOLSETS = _DIRECT_SURFACE_TOOLSETS | {"clarify_one"}
 
 # Event-triggered tools deferred BY DEFAULT (a catalog stub suffices). Keep the curated
 # list in DEFAULT_CONFIG so config discovery and runtime behavior cannot drift. An explicit

@@ -267,6 +267,12 @@ _RAW_INLINE_TOOL_EXECUTORS: dict[str, InlineToolExecutor] = {
         "tools.clarify_tool", "clarify_tool", ("questions", "questions"),
         callback=lambda agent, ctx: agent.clarify_callback,
     ),
+    # Fork patch #15: single-question clarify for the HTTP lane. Same
+    # agent.clarify_callback, so gateway/api_clarify_deferred applies unchanged.
+    "clarify_one": _callback_tool(
+        "tools.clarify_one_tool", "clarify_one_tool", "clarify_callback",
+        ("question", "question"), ("choices", "choices"),
+    ),
     "read_terminal": _callback_tool(
         "tools.read_terminal_tool", "read_terminal_tool", "read_terminal_callback",
         ("start_line", "start_line"), ("count", "count"),
